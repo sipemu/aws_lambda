@@ -1,0 +1,6 @@
+#!/bin/sh
+
+cd /var/task
+
+# --sysimage=/var/task/CustomImage.so 
+/usr/local/julia/bin/julia --project=. /var/task/main.jl

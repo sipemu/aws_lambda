@@ -1,0 +1,56 @@
+# AWS provided base image (Amazon Linux 2)
+# It includes Lambda Runtime Emulator for testing locally.
+FROM public.ecr.aws/lambda/python:3.11
+
+# Download and install Julia
+WORKDIR /usr/local
+RUN yum install -y tar gzip \
+ && curl -LO https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.3-linux-x86_64.tar.gz \
+ && tar xf julia-1.11.3-linux-x86_64.tar.gz \
+ && rm julia-1.11.3-linux-x86_64.tar.gz \
+ && ln -s julia-1.11.3 julia
+
+# Dependency
+RUN yum install -y gcc make \
+ && curl -LO https://github.com/madler/zlib/archive/refs/tags/v1.2.9.tar.gz \
+ && tar xf v1.2.9.tar.gz \
+ && rm v1.2.9.tar.gz \
+ && cd zlib-1.2.9 \
+ && ./configure; make; make install \
+ && ln -sf ./lib/libz.so.1.2.9 /lib64/libz.so.1 
+
+# Install application
+WORKDIR /var/task
+
+# Use a special depot path to store precompiled binaries
+ENV JULIA_DEPOT_PATH /var/task/.julia
+
+# Instantiate project and precompile packages
+COPY Project.toml .
+COPY src src
+RUN /usr/local/julia/bin/julia --project=. -e "using Pkg; Pkg.instantiate();"
+RUN /usr/local/julia/bin/julia --project=. -e "using Pkg; Pkg.precompile();"
+
+# Copy AWS lambda entry point
+COPY main.jl .
+
+# Precompile julia code
+
+# Uncomment this line to allow more precompilation in lamdbda just in case.
+# That's because /var/task is a read-only path during runtime.
+ENV JULIA_DEPOT_PATH /tmp/.julia:/var/task/.julia
+
+# Install bootstrap script
+WORKDIR /var/runtime
+COPY bootstrap .
+RUN chmod +x bootstrap \
+    && sed -i -e 's/\r$//' bootstrap
+
+# Create an empty extensions directory
+WORKDIR /opt/extensions
+
+# Shared libraries:
+ENV LD_PRELOAD /usr/local/lib/libz.so.1
+
+# Which module/function to call?
+CMD [ "JuliaLambda.handle_event" ]
